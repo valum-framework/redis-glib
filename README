@@ -1,0 +1,11 @@
+----------------------------------------------------------------------------
+        Redis-GLib - A Redis Driver for GObject Based Applications
+----------------------------------------------------------------------------
+
+This library piggy backs on top of the hiredis high-performance client
+library for Redis. It provides integration with the main loop, as well
+as the ability to work with higher level structures as compared to the
+strings used by redis.
+
+-- Christian
+

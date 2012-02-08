@@ -1,0 +1,8 @@
+noinst_PROGRAMS =
+noinst_PROGRAMS += test-redis-client
+
+TEST_PROGS += test-redis-client
+
+test_redis_client_SOURCES = $(top_srcdir)/tests/test-redis-client.c
+test_redis_client_CPPFLAGS = $(GIO_CFLAGS) $(GOBJECT_CFLAGS)
+test_redis_client_LDADD = $(GIO_LIBS) $(GOBJECT_LIBS) $(top_builddir)/libredis-glib-1.0.la
