@@ -46,6 +46,74 @@ redis_client_new (void)
 }
 
 static void
+redis_client_command_cb (redisAsyncContext *context,
+                         gpointer           r,
+                         gpointer           user_data)
+{
+   GSimpleAsyncResult *simple = user_data;
+
+   g_return_if_fail(context);
+   g_return_if_fail(G_IS_SIMPLE_ASYNC_RESULT(simple));
+
+   if (r) {
+      g_simple_async_result_set_op_res_gboolean(simple, TRUE);
+      /*
+       * TODO: Copy asyncReply?
+       */
+   }
+
+   g_simple_async_result_complete_in_idle(simple);
+   g_object_unref(simple);
+}
+
+void
+redis_client_command_async (RedisClient         *client,
+                            GAsyncReadyCallback  callback,
+                            gpointer             user_data,
+                            const gchar         *format,
+                            ...)
+{
+   RedisClientPrivate *priv;
+   GSimpleAsyncResult *simple;
+   va_list args;
+
+   g_return_if_fail(REDIS_IS_CLIENT(client));
+   g_return_if_fail(callback);
+   g_return_if_fail(format);
+
+   priv = client->priv;
+
+   simple = g_simple_async_result_new(G_OBJECT(client), callback, user_data,
+                                      redis_client_command_async);
+
+   va_start(args, format);
+   redisvAsyncCommand(priv->context,
+                      redis_client_command_cb,
+                      simple,
+                      format,
+                      args);
+   va_end(args);
+}
+
+gboolean
+redis_client_command_finish (RedisClient   *client,
+                             GAsyncResult  *result,
+                             GError       **error)
+{
+   GSimpleAsyncResult *simple = (GSimpleAsyncResult *)result;
+   gboolean ret;
+
+   g_return_val_if_fail(REDIS_IS_CLIENT(client), FALSE);
+   g_return_val_if_fail(G_IS_SIMPLE_ASYNC_RESULT(simple), FALSE);
+
+   if (!(ret = g_simple_async_result_get_op_res_gboolean(simple))) {
+      g_simple_async_result_propagate_error(simple, error);
+   }
+
+   return ret;
+}
+
+static void
 redis_client_connect_cb (const redisAsyncContext *ac,
                          int                      status)
 {

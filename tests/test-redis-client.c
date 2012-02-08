@@ -3,6 +3,22 @@
 static GMainLoop *gMainLoop;
 
 static void
+test1_cb2 (GObject      *object,
+          GAsyncResult *result,
+          gpointer      user_data)
+{
+   RedisClient *client = (RedisClient *)object;
+   gboolean ret;
+   GError *error = NULL;
+
+   ret = redis_client_command_finish(client, result, &error);
+   g_assert_no_error(error);
+   g_assert(ret);
+
+   g_main_loop_quit(gMainLoop);
+}
+
+static void
 test1_cb (GObject      *object,
           GAsyncResult *result,
           gpointer      user_data)
@@ -14,7 +30,9 @@ test1_cb (GObject      *object,
    *success = redis_client_connect_finish(client, result, &error);
    g_assert_no_error(error);
    g_assert(*success);
-   g_main_loop_quit(gMainLoop);
+
+   redis_client_command_async(client, test1_cb2, NULL,
+                              "SET %s %s", "mykey", "myvalue");
 }
 
 static void
@@ -35,7 +53,7 @@ main (gint   argc,
 {
    g_type_init();
    g_test_init(&argc, &argv, NULL);
-   g_test_add_func("/RedisClient/connect_async", test1);
+   g_test_add_func("/RedisClient/basic", test1);
    gMainLoop = g_main_loop_new(NULL, FALSE);
    return g_test_run();
 }
