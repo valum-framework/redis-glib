@@ -3,7 +3,7 @@ dnl Versioning Macros
 dnl **************************************************************************
 m4_define([redis_major_version], [0])
 m4_define([redis_minor_version], [1])
-m4_define([redis_micro_version], [0])
+m4_define([redis_micro_version], [1])
 m4_define([redis_version],
           [redis_major_version.redis_minor_version.redis_micro_version])
 m4_define([redis_binary_age], [m4_eval(100 * redis_minor_version +
