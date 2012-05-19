@@ -23,12 +23,27 @@
 
 G_DEFINE_TYPE(RedisClient, redis_client, G_TYPE_OBJECT)
 
+typedef struct
+{
+   guint id;
+   gchar *channel;
+   RedisPubsubCallback callback;
+   gpointer user_data;
+   GDestroyNotify notify;
+} RedisClientSub;
+
 struct _RedisClientPrivate
 {
    GSimpleAsyncResult *async_connect;
    guint context_source;
    redisAsyncContext *context;
    GMainContext *main_context;
+
+   /* Pubsub datastructures */
+   guint next_sub;
+   GHashTable *sub_by_id;
+   GHashTable *subs_by_channel;
+   gboolean dispatching;
 };
 
 enum
@@ -139,6 +154,202 @@ redis_client_connect_cb (const redisAsyncContext *ac,
       g_simple_async_result_complete_in_idle(priv->async_connect);
       g_clear_object(&priv->async_connect);
    }
+}
+
+static void
+redis_client_sub_free (gpointer data)
+{
+   RedisClientSub *sub = data;
+
+   if (sub) {
+      g_free(sub->channel);
+      g_free(sub);
+   }
+}
+
+static void
+redis_client_subscribe_cb (redisAsyncContext *context,
+                           gpointer           reply,
+                           gpointer           user_data)
+{
+   RedisClientPrivate *priv;
+   RedisClientSub *sub;
+   RedisClient *client = user_data;
+   const gchar *channel;
+   const gchar *message;
+   redisReply *r = reply;
+   GSList *list;
+   guint message_len;
+
+   g_assert(context);
+   g_assert(REDIS_IS_CLIENT(client));
+
+   priv = client->priv;
+
+   if (reply != NULL) {
+      if (r->type == REDIS_REPLY_ARRAY) {
+         if (r->elements == 3) {
+            if (!g_strcmp0("message", r->element[0]->str)) {
+               /*
+                * Lookup subscribers to this channel using the hashtable of
+                * subs for O(1) access, as suggested by the redis
+                * client implementation guidelines.
+                */
+               channel = r->element[1]->str;
+               message = r->element[2]->str;
+               message_len = r->element[2]->len;
+
+               /*
+                * Dispatch message out to the listeners.
+                */
+               priv->dispatching = TRUE;
+               list = g_hash_table_lookup(priv->subs_by_channel, channel);
+               for (; list; list = list->next) {
+                  sub = list->data;
+                  sub->callback(client, (const guint8 *)message, message_len,
+                                sub->user_data);
+               }
+               priv->dispatching = FALSE;
+            } else if (!g_strcmp0("subscribe", r->element[0]->str)) {
+               /*
+                * TODO: We can complete an asynchronous subscription request
+                *       at this point since we know it suceeded.
+                */
+            }
+         }
+      }
+   }
+}
+
+static void
+redis_client_add_sub (RedisClient    *client,
+                      RedisClientSub *sub)
+{
+   RedisClientPrivate *priv;
+   GSList *list;
+
+   g_return_if_fail(REDIS_IS_CLIENT(client));
+   g_return_if_fail(sub);
+
+   priv = client->priv;
+
+   /*
+    * Get the next subscription identifier.
+    */
+   sub->id = priv->next_sub++;
+
+   /*
+    * Add the subscription to the hashtable indexed by subscription id.
+    */
+   g_hash_table_insert(priv->sub_by_id, &sub->id, sub);
+
+   /*
+    * Add the subscription to the channels hashtable. Remotely subscribe
+    * to the channel if necessary.
+    */
+   if (!(list = g_hash_table_lookup(priv->subs_by_channel, sub->channel))) {
+      /*
+       * Add this subscription to the hashtable.
+       */
+      list = g_slist_append(NULL, sub);
+      g_hash_table_insert(priv->subs_by_channel,
+                          g_strdup(sub->channel),
+                          list);
+
+      /*
+       * If nothing is in the channels hashtable yet, then we need to
+       * actually subscribe using the redis context.
+       */
+      redisAsyncCommand(priv->context,
+                        redis_client_subscribe_cb,
+                        client,
+                        "SUBSCRIBE %s", sub->channel);
+   } else {
+      /*
+       * Since there is already an item, the first value wont change.
+       * Therefore we don't need to store it back to the hashtable.
+       */
+      list = g_slist_append(list, sub);
+   }
+}
+
+static void
+redis_client_remove_sub (RedisClient    *client,
+                         RedisClientSub *sub)
+{
+   RedisClientPrivate *priv;
+   GSList *list;
+
+   g_return_if_fail(REDIS_IS_CLIENT(client));
+   g_return_if_fail(sub);
+
+   priv = client->priv;
+
+   if ((list = g_hash_table_lookup(priv->subs_by_channel, sub->channel))) {
+      list = g_slist_remove(list, sub);
+      if (!list) {
+         g_hash_table_remove(priv->subs_by_channel, sub->channel);
+         redisAsyncCommand(priv->context, NULL, NULL,
+                           "UNSUBSCRIBE %s", sub->channel);
+      } else {
+         g_hash_table_replace(priv->subs_by_channel,
+                              g_strdup(sub->channel),
+                              list);
+      }
+   }
+
+   g_hash_table_remove(priv->sub_by_id, &sub->id);
+}
+
+guint
+redis_client_subscribe (RedisClient         *client,
+                        const gchar         *channel,
+                        RedisPubsubCallback  callback,
+                        gpointer             user_data,
+                        GDestroyNotify       notify)
+{
+   RedisClientSub *sub;
+
+   g_return_val_if_fail(REDIS_IS_CLIENT(client), 0);
+   g_return_val_if_fail(channel, 0);
+   g_return_val_if_fail(g_utf8_validate(channel, -1, NULL), 0);
+   g_return_val_if_fail(callback, 0);
+
+   sub = g_new0(RedisClientSub, 1);
+   sub->channel = g_strdup(channel);
+   sub->callback = callback;
+   sub->user_data = user_data;
+   sub->notify = notify;
+
+   redis_client_add_sub(client, sub);
+
+   return sub->id;
+}
+
+void
+redis_client_unsubscribe (RedisClient *client,
+                          guint        handler_id)
+{
+   RedisClientPrivate *priv;
+   RedisClientSub *sub;
+
+   g_return_if_fail(REDIS_IS_CLIENT(client));
+   g_return_if_fail(handler_id > 0);
+
+   priv = client->priv;
+
+   if (priv->dispatching) {
+      g_warning("Request to unsubscribe from subscription callback! "
+                "Re-entrancy is not allowed. Ignoring request.");
+      return;
+   }
+
+   if (!(sub = g_hash_table_lookup(priv->sub_by_id, &handler_id))) {
+      g_warning("No subscription matching %u found.", handler_id);
+      return;
+   }
+
+   redis_client_remove_sub(client, sub);
 }
 
 static void
@@ -255,6 +466,16 @@ redis_client_connect_finish (RedisClient   *client,
 static void
 redis_client_finalize (GObject *object)
 {
+   RedisClientPrivate *priv;
+
+   priv = REDIS_CLIENT(object)->priv;
+
+   g_hash_table_unref(priv->sub_by_id);
+   priv->sub_by_id = NULL;
+
+   g_hash_table_unref(priv->subs_by_channel);
+   priv->subs_by_channel = NULL;
+
    G_OBJECT_CLASS(redis_client_parent_class)->finalize(object);
 }
 
@@ -275,6 +496,13 @@ redis_client_init (RedisClient *client)
       G_TYPE_INSTANCE_GET_PRIVATE(client,
                                   REDIS_TYPE_CLIENT,
                                   RedisClientPrivate);
+   client->priv->sub_by_id =
+      g_hash_table_new_full(g_int_hash, g_int_equal, NULL,
+                            redis_client_sub_free);
+   client->priv->subs_by_channel =
+      g_hash_table_new_full(g_str_hash, g_str_equal, g_free,
+                            NULL);
+   client->priv->next_sub = 1;
 }
 
 GQuark

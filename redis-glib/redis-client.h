@@ -37,6 +37,11 @@ typedef struct _RedisClientClass   RedisClientClass;
 typedef struct _RedisClientPrivate RedisClientPrivate;
 typedef enum   _RedisClientError   RedisClientError;
 
+typedef void (*RedisPubsubCallback) (RedisClient  *client,
+                                     const guint8 *data,
+                                     gsize         data_len,
+                                     gpointer      user_data);
+
 enum _RedisClientError
 {
    REDIS_CLIENT_ERROR_INVALID_STATE = 1,
@@ -72,6 +77,13 @@ void         redis_client_connect_async  (RedisClient          *client,
 gboolean     redis_client_connect_finish (RedisClient          *client,
                                           GAsyncResult         *result,
                                           GError              **error);
+guint        redis_client_subscribe      (RedisClient          *client,
+                                          const gchar          *channel,
+                                          RedisPubsubCallback   callback,
+                                          gpointer              data,
+                                          GDestroyNotify        notify);
+void         redis_client_unsubscribe    (RedisClient          *client,
+                                          guint                 handler_id);
 GQuark       redis_client_error_quark    (void) G_GNUC_CONST;
 GType        redis_client_get_type       (void) G_GNUC_CONST;
 RedisClient *redis_client_new            (void);
