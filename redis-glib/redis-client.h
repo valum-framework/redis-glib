@@ -38,8 +38,7 @@ typedef struct _RedisClientPrivate RedisClientPrivate;
 typedef enum   _RedisClientError   RedisClientError;
 
 typedef void (*RedisPubsubCallback) (RedisClient  *client,
-                                     const guint8 *data,
-                                     gsize         data_len,
+                                     GBytes       *bytes,
                                      gpointer      user_data);
 
 enum _RedisClientError

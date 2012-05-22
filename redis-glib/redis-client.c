@@ -176,10 +176,9 @@ redis_client_subscribe_cb (redisAsyncContext *context,
    RedisClientSub *sub;
    RedisClient *client = user_data;
    const gchar *channel;
-   const gchar *message;
    redisReply *r = reply;
+   GBytes *bytes;
    GSList *list;
-   guint message_len;
 
    g_assert(context);
    g_assert(REDIS_IS_CLIENT(client));
@@ -196,8 +195,7 @@ redis_client_subscribe_cb (redisAsyncContext *context,
                 * client implementation guidelines.
                 */
                channel = r->element[1]->str;
-               message = r->element[2]->str;
-               message_len = r->element[2]->len;
+               bytes = g_bytes_new(r->element[2]->str, r->element[2]->len);
 
                /*
                 * Dispatch message out to the listeners.
@@ -206,10 +204,10 @@ redis_client_subscribe_cb (redisAsyncContext *context,
                list = g_hash_table_lookup(priv->subs_by_channel, channel);
                for (; list; list = list->next) {
                   sub = list->data;
-                  sub->callback(client, (const guint8 *)message, message_len,
-                                sub->user_data);
+                  sub->callback(client, bytes, sub->user_data);
                }
                priv->dispatching = FALSE;
+               g_bytes_unref(bytes);
             } else if (!g_strcmp0("subscribe", r->element[0]->str)) {
                /*
                 * TODO: We can complete an asynchronous subscription request
