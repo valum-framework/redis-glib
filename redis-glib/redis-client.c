@@ -46,18 +46,57 @@ struct _RedisClientPrivate
    gboolean dispatching;
 };
 
-enum
-{
-   PROP_0,
-   LAST_PROP
-};
-
-//static GParamSpec *gParamSpecs[LAST_PROP];
-
 RedisClient *
 redis_client_new (void)
 {
    return g_object_new(REDIS_TYPE_CLIENT, NULL);
+}
+
+static GVariant *
+redis_client_build_variant (redisReply  *reply,
+                            GError     **error)
+{
+   g_assert(reply);
+   g_assert(error);
+
+   switch (reply->type) {
+   case REDIS_REPLY_STATUS:
+   case REDIS_REPLY_STRING:
+      return g_variant_new_string(reply->str);
+   case REDIS_REPLY_ARRAY: {
+      GVariantBuilder b;
+      GVariant *v;
+      guint i;
+
+      g_variant_builder_init(&b, G_VARIANT_TYPE_ARRAY);
+      for (i = 0; i < reply->elements; i++) {
+         if (!(v = redis_client_build_variant(reply->element[i], error))) {
+            g_variant_builder_clear(&b);
+            return NULL;
+         }
+         g_variant_builder_add_value(&b, v);
+      }
+      return g_variant_builder_end(&b);
+   }
+   case REDIS_REPLY_INTEGER:
+      return g_variant_new_int64(reply->integer);
+   case REDIS_REPLY_NIL:
+      return g_variant_new_maybe(G_VARIANT_TYPE_STRING, NULL);
+   case REDIS_REPLY_ERROR:
+      g_set_error(error,
+                  REDIS_CLIENT_ERROR,
+                  REDIS_CLIENT_ERROR_HIREDIS,
+                  "%s", reply->str);
+      return NULL;
+   default:
+      break;
+   }
+
+   g_set_error(error,
+               REDIS_CLIENT_ERROR,
+               REDIS_CLIENT_ERROR_HIREDIS,
+               _("Invalid reply from redis."));
+   return NULL;
 }
 
 static void
@@ -66,15 +105,24 @@ redis_client_command_cb (redisAsyncContext *context,
                          gpointer           user_data)
 {
    GSimpleAsyncResult *simple = user_data;
+   GVariant *variant;
+   GError *error = NULL;
 
    g_return_if_fail(context);
    g_return_if_fail(G_IS_SIMPLE_ASYNC_RESULT(simple));
 
    if (r) {
-      g_simple_async_result_set_op_res_gboolean(simple, TRUE);
-      /*
-       * TODO: Copy asyncReply?
-       */
+      if (!(variant = redis_client_build_variant(r, &error))) {
+         g_simple_async_result_take_error(simple, error);
+      } else {
+         g_simple_async_result_set_op_res_gpointer(
+               simple, variant, (GDestroyNotify)g_variant_unref);
+      }
+   } else {
+      g_simple_async_result_set_error(simple,
+                                      REDIS_CLIENT_ERROR,
+                                      REDIS_CLIENT_ERROR_HIREDIS,
+                                      _("Missing reply from redis."));
    }
 
    g_simple_async_result_complete_in_idle(simple);
@@ -110,22 +158,22 @@ redis_client_command_async (RedisClient         *client,
    va_end(args);
 }
 
-gboolean
+GVariant *
 redis_client_command_finish (RedisClient   *client,
                              GAsyncResult  *result,
                              GError       **error)
 {
    GSimpleAsyncResult *simple = (GSimpleAsyncResult *)result;
-   gboolean ret;
+   GVariant *ret;
 
    g_return_val_if_fail(REDIS_IS_CLIENT(client), FALSE);
    g_return_val_if_fail(G_IS_SIMPLE_ASYNC_RESULT(simple), FALSE);
 
-   if (!(ret = g_simple_async_result_get_op_res_gboolean(simple))) {
+   if (!(ret = g_simple_async_result_get_op_res_gpointer(simple))) {
       g_simple_async_result_propagate_error(simple, error);
    }
 
-   return ret;
+   return ret ? g_variant_ref(ret) : NULL;
 }
 
 static void

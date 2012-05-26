@@ -3,19 +3,45 @@
 static GMainLoop *gMainLoop;
 
 static void
-test1_cb2 (GObject      *object,
+test1_cb3 (GObject      *object,
           GAsyncResult *result,
           gpointer      user_data)
 {
    RedisClient *client = (RedisClient *)object;
-   gboolean ret;
+   const gchar *str;
+   GVariant *ret;
    GError *error = NULL;
 
    ret = redis_client_command_finish(client, result, &error);
    g_assert_no_error(error);
    g_assert(ret);
+   g_assert(g_variant_is_of_type(ret, G_VARIANT_TYPE_STRING));
+   str = g_variant_get_string(ret, NULL);
+   g_assert_cmpstr(str, ==, "myvalue");
+   g_variant_unref(ret);
 
    g_main_loop_quit(gMainLoop);
+}
+
+static void
+test1_cb2 (GObject      *object,
+          GAsyncResult *result,
+          gpointer      user_data)
+{
+   RedisClient *client = (RedisClient *)object;
+   const gchar *str;
+   GVariant *ret;
+   GError *error = NULL;
+
+   ret = redis_client_command_finish(client, result, &error);
+   g_assert_no_error(error);
+   g_assert(ret);
+   g_assert(g_variant_is_of_type(ret, G_VARIANT_TYPE_STRING));
+   str = g_variant_get_string(ret, NULL);
+   g_assert_cmpstr(str, ==, "OK");
+   g_variant_unref(ret);
+
+   redis_client_command_async(client, test1_cb3, NULL, "GET mykey");
 }
 
 static void

@@ -65,7 +65,7 @@ void         redis_client_command_async  (RedisClient          *client,
                                           gpointer              user_data,
                                           const gchar          *format,
                                           ...);
-gboolean     redis_client_command_finish (RedisClient          *client,
+GVariant    *redis_client_command_finish (RedisClient          *client,
                                           GAsyncResult         *result,
                                           GError              **error);
 void         redis_client_connect_async  (RedisClient          *client,
