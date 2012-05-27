@@ -57,7 +57,6 @@ redis_client_build_variant (redisReply  *reply,
                             GError     **error)
 {
    g_assert(reply);
-   g_assert(error);
 
    switch (reply->type) {
    case REDIS_REPLY_STATUS:
@@ -225,7 +224,7 @@ redis_client_subscribe_cb (redisAsyncContext *context,
    RedisClient *client = user_data;
    const gchar *channel;
    redisReply *r = reply;
-   GBytes *bytes;
+   GVariant *v;
    GSList *list;
 
    g_assert(context);
@@ -233,39 +232,23 @@ redis_client_subscribe_cb (redisAsyncContext *context,
 
    priv = client->priv;
 
-   if (reply != NULL) {
-      if (r->type == REDIS_REPLY_ARRAY) {
-         if (r->elements == 3) {
-            if (!g_strcmp0("message", r->element[0]->str)) {
-               /*
-                * Lookup subscribers to this channel using the hashtable of
-                * subs for O(1) access, as suggested by the redis
-                * client implementation guidelines.
-                */
-               channel = r->element[1]->str;
-
-               /*
-                * Dispatch message out to the listeners.
-                */
-               priv->dispatching = TRUE;
-               list = g_hash_table_lookup(priv->subs_by_channel, channel);
-               if (list) {
-                  bytes = g_bytes_new(r->element[2]->str, r->element[2]->len);
-                  for (; list; list = list->next) {
-                     sub = list->data;
-                     sub->callback(client, bytes, sub->user_data);
-                  }
-                  g_bytes_unref(bytes);
-               }
-               priv->dispatching = FALSE;
-            } else if (!g_strcmp0("subscribe", r->element[0]->str)) {
-               /*
-                * TODO: We can complete an asynchronous subscription request
-                *       at this point since we know it suceeded.
-                */
-            }
-         }
+   if (r &&
+       (r->type == REDIS_REPLY_ARRAY) &&
+       (r->elements == 3) &&
+       (r->element[0]->type == REDIS_REPLY_STRING) &&
+       !g_strcmp0(r->element[0]->str, "message") &&
+       (r->element[1]->type == REDIS_REPLY_STRING) &&
+       (channel = r->element[1]->str) &&
+       (v = redis_client_build_variant(r->element[2], NULL))) {
+      g_variant_ref_sink(v);
+      priv->dispatching = TRUE;
+      list = g_hash_table_lookup(priv->subs_by_channel, channel);
+      for (; list; list = list->next) {
+         sub = list->data;
+         sub->callback(client, v, sub->user_data);
       }
+      priv->dispatching = FALSE;
+      g_variant_unref(v);
    }
 }
 

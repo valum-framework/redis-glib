@@ -37,9 +37,9 @@ typedef struct _RedisClientClass   RedisClientClass;
 typedef struct _RedisClientPrivate RedisClientPrivate;
 typedef enum   _RedisClientError   RedisClientError;
 
-typedef void (*RedisPubsubCallback) (RedisClient  *client,
-                                     GBytes       *bytes,
-                                     gpointer      user_data);
+typedef void (*RedisPubsubCallback) (RedisClient *client,
+                                     GVariant    *variant,
+                                     gpointer     user_data);
 
 enum _RedisClientError
 {
