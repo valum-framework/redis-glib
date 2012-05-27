@@ -60,8 +60,12 @@ redis_client_build_variant (redisReply  *reply,
 
    switch (reply->type) {
    case REDIS_REPLY_STATUS:
-   case REDIS_REPLY_STRING:
       return g_variant_new_string(reply->str);
+   case REDIS_REPLY_STRING:
+      return g_variant_new_fixed_array(G_VARIANT_TYPE_BYTE,
+                                       reply->str,
+                                       reply->len,
+                                       sizeof(guint8));
    case REDIS_REPLY_ARRAY: {
       GVariantBuilder b;
       GVariant *v;

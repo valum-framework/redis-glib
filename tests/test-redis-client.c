@@ -1,4 +1,5 @@
 #include <redis-glib/redis-glib.h>
+#include <string.h>
 
 static GMainLoop *gMainLoop;
 
@@ -8,16 +9,18 @@ test1_cb3 (GObject      *object,
           gpointer      user_data)
 {
    RedisClient *client = (RedisClient *)object;
-   const gchar *str;
+   const gchar *str = NULL;
    GVariant *ret;
    GError *error = NULL;
+   gsize len = 0;
 
    ret = redis_client_command_finish(client, result, &error);
    g_assert_no_error(error);
    g_assert(ret);
-   g_assert(g_variant_is_of_type(ret, G_VARIANT_TYPE_STRING));
-   str = g_variant_get_string(ret, NULL);
-   g_assert_cmpstr(str, ==, "myvalue");
+   g_assert(g_variant_is_of_type(ret, G_VARIANT_TYPE_ARRAY));
+   str = g_variant_get_fixed_array(ret, &len, sizeof(guint8));
+   g_assert_cmpint(len, ==, 7);
+   g_assert(!memcmp("myvalue", str, 7));
    g_variant_unref(ret);
 
    g_main_loop_quit(gMainLoop);
