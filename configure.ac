@@ -132,6 +132,7 @@ dnl Miscellaneous
 dnl **************************************************************************
 GTK_DOC_CHECK([1.11])
 GOBJECT_INTROSPECTION_CHECK([0.6.7])
+VAPIGEN_CHECK
 SHAMROCK_EXPAND_LIBDIR
 SHAMROCK_EXPAND_BINDIR
 SHAMROCK_EXPAND_DATADIR
@@ -154,4 +155,5 @@ echo "  Debug Level................: ${enable_debug}"
 echo "  Compiler Flags.............: ${CFLAGS}"
 echo "  Enable API Reference.......: ${enable_gtk_doc}"
 echo "  Enable Test Suite..........: ${enable_glibtest}"
+echo "  Enable Vala Bindings.......: ${enable_vala}"
 echo ""
