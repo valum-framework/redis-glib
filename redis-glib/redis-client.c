@@ -545,3 +545,24 @@ redis_client_error_quark (void)
 {
    return g_quark_from_string("redis-client-error-quark");
 }
+
+GType
+redis_client_error_get_type (void)
+{
+   static gsize initialized;
+   static GType type_id;
+   static const GEnumValue values[] = {
+      { REDIS_CLIENT_ERROR_INVALID_STATE, "REDIS_CLIENT_ERROR_INVALID_STATE", "INVALID_STATE" },
+      { REDIS_CLIENT_ERROR_HIREDIS, "REDIS_CLIENT_ERROR_HIREDIS", "HIREDIS" },
+      { 0 }
+   };
+
+   if (g_once_init_enter(&initialized)) {
+      type_id = g_enum_register_static(
+         g_intern_static_string("RedisClientError"),
+         values);
+      g_once_init_leave(&initialized, TRUE);
+   }
+
+   return type_id;
+}

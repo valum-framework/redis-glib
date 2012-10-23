@@ -24,6 +24,7 @@
 G_BEGIN_DECLS
 
 #define REDIS_TYPE_CLIENT            (redis_client_get_type())
+#define REDIS_TYPE_CLIENT_ERROR      (redis_client_error_get_type())
 #define REDIS_CLIENT_ERROR           (redis_client_error_quark())
 #define REDIS_CLIENT(obj)            (G_TYPE_CHECK_INSTANCE_CAST ((obj), REDIS_TYPE_CLIENT, RedisClient))
 #define REDIS_CLIENT_CONST(obj)      (G_TYPE_CHECK_INSTANCE_CAST ((obj), REDIS_TYPE_CLIENT, RedisClient const))
@@ -84,6 +85,7 @@ guint        redis_client_subscribe      (RedisClient          *client,
 void         redis_client_unsubscribe    (RedisClient          *client,
                                           guint                 handler_id);
 GQuark       redis_client_error_quark    (void) G_GNUC_CONST;
+GType        redis_client_error_get_type (void) G_GNUC_CONST;
 GType        redis_client_get_type       (void) G_GNUC_CONST;
 RedisClient *redis_client_new            (void);
 
