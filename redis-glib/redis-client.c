@@ -133,15 +133,14 @@ redis_client_command_cb (redisAsyncContext *context,
 }
 
 void
-redis_client_command_async (RedisClient         *client,
-                            GAsyncReadyCallback  callback,
-                            gpointer             user_data,
-                            const gchar         *format,
-                            ...)
+redis_client_command_asyncv (RedisClient         *client,
+                             GAsyncReadyCallback  callback,
+                             gpointer             user_data,
+                             const gchar         *format,
+                             va_list              args)
 {
    RedisClientPrivate *priv;
    GSimpleAsyncResult *simple;
-   va_list args;
 
    g_return_if_fail(REDIS_IS_CLIENT(client));
    g_return_if_fail(callback);
@@ -150,14 +149,29 @@ redis_client_command_async (RedisClient         *client,
    priv = client->priv;
 
    simple = g_simple_async_result_new(G_OBJECT(client), callback, user_data,
-                                      redis_client_command_async);
-
-   va_start(args, format);
+                                      redis_client_command_asyncv);
    redisvAsyncCommand(priv->context,
                       redis_client_command_cb,
                       simple,
                       format,
                       args);
+}
+
+void
+redis_client_command_async (RedisClient         *client,
+                            GAsyncReadyCallback  callback,
+                            gpointer             user_data,
+                            const gchar         *format,
+                            ...)
+{
+   va_list args;
+
+   g_return_if_fail(REDIS_IS_CLIENT(client));
+   g_return_if_fail(callback);
+   g_return_if_fail(format);
+
+   va_start(args, format);
+   redis_client_command_asyncv(client, callback, user_data, format, args);
    va_end(args);
 }
 

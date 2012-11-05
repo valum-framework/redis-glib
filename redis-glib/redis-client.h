@@ -61,6 +61,11 @@ struct _RedisClientClass
    GObjectClass parent_class;
 };
 
+void         redis_client_command_asyncv (RedisClient          *client,
+                                          GAsyncReadyCallback   callback,
+                                          gpointer              user_data,
+                                          const gchar          *format,
+                                          va_list               args);
 void         redis_client_command_async  (RedisClient          *client,
                                           GAsyncReadyCallback   callback,
                                           gpointer              user_data,
