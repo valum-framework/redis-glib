@@ -17,6 +17,7 @@
  */
 
 #include <glib/gi18n.h>
+#include <string.h>
 
 #include "redis-adapter.h"
 #include "redis-client.h"
@@ -191,6 +192,69 @@ redis_client_command_finish (RedisClient   *client,
    }
 
    return ret ? g_variant_ref(ret) : NULL;
+}
+
+static void
+redis_client_publish_cb (redisAsyncContext *context,
+                         gpointer           r,
+                         gpointer           user_data)
+{
+   GSimpleAsyncResult *simple = user_data;
+
+   g_assert(context);
+   g_assert(G_IS_SIMPLE_ASYNC_RESULT(simple));
+
+   g_simple_async_result_complete_in_idle(simple);
+   g_object_unref(simple);
+}
+
+void
+redis_client_publish_async (RedisClient         *client,
+                            const gchar         *channel,
+                            const gchar         *message,
+                            gssize               length,
+                            GAsyncReadyCallback  callback,
+                            gpointer             user_data)
+{
+   RedisClientPrivate *priv;
+   GSimpleAsyncResult *simple;
+
+   g_return_if_fail(REDIS_IS_CLIENT(client));
+   g_return_if_fail(channel);
+   g_return_if_fail(message);
+   g_return_if_fail(length >= -1);
+
+   priv = client->priv;
+
+   if (length < 0) {
+      length = strlen(message);
+   }
+
+   simple = g_simple_async_result_new(G_OBJECT(client), callback, user_data,
+                                      redis_client_publish_async);
+
+   redisAsyncCommand(priv->context,
+                     redis_client_publish_cb,
+                     simple,
+                     "PUBLISH %s %b", channel, message, length);
+}
+
+gboolean
+redis_client_publish_finish (RedisClient   *client,
+                             GAsyncResult  *result,
+                             GError       **error)
+{
+   GSimpleAsyncResult *simple = (GSimpleAsyncResult *)result;
+   gboolean ret;
+
+   g_return_val_if_fail(REDIS_IS_CLIENT(client), FALSE);
+   g_return_val_if_fail(G_IS_SIMPLE_ASYNC_RESULT(simple), FALSE);
+
+   if (!(ret = g_simple_async_result_get_op_res_gboolean(simple))) {
+      g_simple_async_result_propagate_error(simple, error);
+   }
+
+   return ret;
 }
 
 static void

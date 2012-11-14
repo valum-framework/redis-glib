@@ -82,6 +82,15 @@ void         redis_client_connect_async  (RedisClient          *client,
 gboolean     redis_client_connect_finish (RedisClient          *client,
                                           GAsyncResult         *result,
                                           GError              **error);
+void         redis_client_publish_async  (RedisClient          *client,
+                                          const gchar          *channel,
+                                          const gchar          *message,
+                                          gssize                length,
+                                          GAsyncReadyCallback   callback,
+                                          gpointer              user_data);
+gboolean     redis_client_publish_finish (RedisClient          *client,
+                                          GAsyncResult         *result,
+                                          GError              **error);
 guint        redis_client_subscribe      (RedisClient          *client,
                                           const gchar          *channel,
                                           RedisPubsubCallback   callback,
