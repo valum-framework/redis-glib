@@ -272,7 +272,11 @@ redis_client_connect_cb (const redisAsyncContext *ac,
    priv = REDIS_CLIENT(source->user_data)->priv;
 
    if (priv->async_connect) {
+#if (HIREDIS_MAJOR == 0) && (HIREDIS_MINOR <= 10)
+      success = (ac->err == REDIS_OK);
+#else
       success = (status == REDIS_OK);
+#endif
       g_simple_async_result_set_op_res_gboolean(priv->async_connect, success);
       if (!success) {
          g_simple_async_result_set_error(priv->async_connect,
