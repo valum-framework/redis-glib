@@ -35,7 +35,7 @@ typedef struct
 
 struct _RedisClientPrivate
 {
-   GSimpleAsyncResult *async_connect;
+   GTask *async_connect;
    guint context_source;
    redisAsyncContext *context;
    GMainContext *main_context;
@@ -108,29 +108,28 @@ redis_client_command_cb (redisAsyncContext *context,
                          gpointer           r,
                          gpointer           user_data)
 {
-   GSimpleAsyncResult *simple = user_data;
+   GTask *task = user_data;
    GVariant *variant;
    GError *error = NULL;
 
    g_return_if_fail(context);
-   g_return_if_fail(G_IS_SIMPLE_ASYNC_RESULT(simple));
+   g_return_if_fail(G_IS_TASK(task));
 
    if (r) {
       if (!(variant = redis_client_build_variant(r, &error))) {
-         g_simple_async_result_take_error(simple, error);
+         g_task_return_error(task, error);
       } else {
-         g_simple_async_result_set_op_res_gpointer(
-               simple, variant, (GDestroyNotify)g_variant_unref);
+         g_task_return_pointer(
+               task, variant, (GDestroyNotify)g_variant_unref);
       }
    } else {
-      g_simple_async_result_set_error(simple,
-                                      REDIS_CLIENT_ERROR,
-                                      REDIS_CLIENT_ERROR_HIREDIS,
-                                      _("Missing reply from redis."));
+      g_task_return_new_error(task,
+                              REDIS_CLIENT_ERROR,
+                              REDIS_CLIENT_ERROR_HIREDIS,
+                              _("Missing reply from redis."));
    }
 
-   g_simple_async_result_complete_in_idle(simple);
-   g_object_unref(simple);
+   g_object_unref(task);
 }
 
 void
@@ -141,7 +140,7 @@ redis_client_command_asyncv (RedisClient         *client,
                              va_list              args)
 {
    RedisClientPrivate *priv;
-   GSimpleAsyncResult *simple;
+   GTask *task;
 
    g_return_if_fail(REDIS_IS_CLIENT(client));
    g_return_if_fail(callback);
@@ -149,11 +148,11 @@ redis_client_command_asyncv (RedisClient         *client,
 
    priv = client->priv;
 
-   simple = g_simple_async_result_new(G_OBJECT(client), callback, user_data,
-                                      redis_client_command_asyncv);
+   task = g_task_new(G_OBJECT(client), NULL, callback, user_data);
+
    redisvAsyncCommand(priv->context,
                       redis_client_command_cb,
-                      simple,
+                      task,
                       format,
                       args);
 }
@@ -181,15 +180,13 @@ redis_client_command_finish (RedisClient   *client,
                              GAsyncResult  *result,
                              GError       **error)
 {
-   GSimpleAsyncResult *simple = (GSimpleAsyncResult *)result;
+   GTask *task = (GTask *)result;
    GVariant *ret;
 
    g_return_val_if_fail(REDIS_IS_CLIENT(client), FALSE);
-   g_return_val_if_fail(G_IS_SIMPLE_ASYNC_RESULT(simple), FALSE);
+   g_return_val_if_fail(G_IS_TASK(task), FALSE);
 
-   if (!(ret = g_simple_async_result_get_op_res_gpointer(simple))) {
-      g_simple_async_result_propagate_error(simple, error);
-   }
+   ret = g_task_propagate_pointer(task, error);
 
    return ret ? g_variant_ref(ret) : NULL;
 }
@@ -199,18 +196,17 @@ redis_client_publish_cb (redisAsyncContext *context,
                          gpointer           r,
                          gpointer           user_data)
 {
-   GSimpleAsyncResult *simple = user_data;
+   GTask *task = user_data;
 
    g_assert(context);
-   g_assert(G_IS_SIMPLE_ASYNC_RESULT(simple));
+   g_assert(G_IS_TASK(task));
 
    /*
     * TODO: Is there anything to check for failure/error?
     */
 
-   g_simple_async_result_set_op_res_gboolean(simple, TRUE);
-   g_simple_async_result_complete_in_idle(simple);
-   g_object_unref(simple);
+   g_task_return_boolean(task, TRUE);
+   g_object_unref(task);
 }
 
 void
@@ -222,7 +218,7 @@ redis_client_publish_async (RedisClient         *client,
                             gpointer             user_data)
 {
    RedisClientPrivate *priv;
-   GSimpleAsyncResult *simple;
+   GTask *task;
 
    g_return_if_fail(REDIS_IS_CLIENT(client));
    g_return_if_fail(channel);
@@ -235,12 +231,11 @@ redis_client_publish_async (RedisClient         *client,
       length = strlen(message);
    }
 
-   simple = g_simple_async_result_new(G_OBJECT(client), callback, user_data,
-                                      redis_client_publish_async);
+   task = g_task_new(G_OBJECT(client), NULL, callback, user_data);
 
    redisAsyncCommand(priv->context,
                      redis_client_publish_cb,
-                     simple,
+                     task,
                      "PUBLISH %s %b", channel, message, length);
 }
 
@@ -249,17 +244,12 @@ redis_client_publish_finish (RedisClient   *client,
                              GAsyncResult  *result,
                              GError       **error)
 {
-   GSimpleAsyncResult *simple = (GSimpleAsyncResult *)result;
-   gboolean ret;
+   GTask *task = (GTask *)result;
 
    g_return_val_if_fail(REDIS_IS_CLIENT(client), FALSE);
-   g_return_val_if_fail(G_IS_SIMPLE_ASYNC_RESULT(simple), FALSE);
+   g_return_val_if_fail(G_IS_TASK(task), FALSE);
 
-   if (!(ret = g_simple_async_result_get_op_res_gboolean(simple))) {
-      g_simple_async_result_propagate_error(simple, error);
-   }
-
-   return ret;
+   return g_task_propagate_boolean(task, error);
 }
 
 static void
@@ -282,14 +272,13 @@ redis_client_connect_cb (const redisAsyncContext *ac,
 #else
       success = (status == REDIS_OK);
 #endif
-      g_simple_async_result_set_op_res_gboolean(priv->async_connect, success);
+      g_task_return_boolean(priv->async_connect, success);
       if (!success) {
-         g_simple_async_result_set_error(priv->async_connect,
-                                         REDIS_CLIENT_ERROR,
-                                         REDIS_CLIENT_ERROR_HIREDIS,
-                                         "%s", ac->errstr);
+         g_task_return_new_error(priv->async_connect,
+                                 REDIS_CLIENT_ERROR,
+                                 REDIS_CLIENT_ERROR_HIREDIS,
+                                 "%s", ac->errstr);
       }
-      g_simple_async_result_complete_in_idle(priv->async_connect);
       g_clear_object(&priv->async_connect);
    }
 }
@@ -489,7 +478,7 @@ redis_client_connect_async (RedisClient         *client,
                             gpointer             user_data)
 {
    RedisClientPrivate *priv;
-   GSimpleAsyncResult *simple;
+   GTask *task;
    GSource *source;
 
    g_return_if_fail(REDIS_IS_CLIENT(client));
@@ -506,16 +495,14 @@ redis_client_connect_async (RedisClient         *client,
     * Make sure we haven't already connected.
     */
    if (priv->context) {
-      simple =
-         g_simple_async_result_new_error(G_OBJECT(client),
-                                         callback,
-                                         user_data,
-                                         REDIS_CLIENT_ERROR,
-                                         REDIS_CLIENT_ERROR_INVALID_STATE,
-                                         _("%s() has already been called."),
-                                         G_STRFUNC);
-      g_simple_async_result_complete_in_idle(simple);
-      g_object_unref(simple);
+      task =
+         g_task_new(G_OBJECT(client), NULL, callback, user_data);
+      g_task_return_new_error(task,
+                              REDIS_CLIENT_ERROR,
+                              REDIS_CLIENT_ERROR_INVALID_STATE,
+                              _("%s() has already been called."),
+                              G_STRFUNC);
+      g_object_unref(task);
       return;
    }
 
@@ -524,27 +511,24 @@ redis_client_connect_async (RedisClient         *client,
     */
    priv->context = redisAsyncConnect(hostname, port);
    if (priv->context->err) {
-      simple =
-         g_simple_async_result_new_error(G_OBJECT(client),
-                                         callback,
-                                         user_data,
-                                         REDIS_CLIENT_ERROR,
-                                         REDIS_CLIENT_ERROR_HIREDIS,
-                                         "%s", priv->context->errstr);
-      g_simple_async_result_complete_in_idle(simple);
-      g_object_unref(simple);
+      task =
+         g_task_new(G_OBJECT(client), NULL, callback, user_data);
+      g_task_return_new_error(task,
+                              REDIS_CLIENT_ERROR,
+                              REDIS_CLIENT_ERROR_HIREDIS,
+                              "%s", priv->context->errstr);
+      g_object_unref(task);
       redisAsyncFree(priv->context);
       priv->context = NULL;
       return;
    }
 
    /*
-    * Save our GSimpleAsyncResult for later callback.
+    * Save our GTask for later callback.
     */
    g_assert(!priv->async_connect);
    priv->async_connect =
-      g_simple_async_result_new(G_OBJECT(client), callback, user_data,
-                                redis_client_connect_async);
+      g_task_new(G_OBJECT(client), NULL, callback, user_data);
 
    /*
     * Create an event source so that we get our callbacks.
@@ -572,17 +556,12 @@ redis_client_connect_finish (RedisClient   *client,
                              GAsyncResult  *result,
                              GError       **error)
 {
-   GSimpleAsyncResult *simple = (GSimpleAsyncResult *)result;
-   gboolean ret;
+   GTask *task = (GTask *)result;
 
    g_return_val_if_fail(REDIS_IS_CLIENT(client), FALSE);
-   g_return_val_if_fail(G_IS_SIMPLE_ASYNC_RESULT(simple), FALSE);
+   g_return_val_if_fail(G_IS_TASK(task), FALSE);
 
-   if (!(ret = g_simple_async_result_get_op_res_gboolean(simple))) {
-      g_simple_async_result_propagate_error(simple, error);
-   }
-
-   return ret;
+   return g_task_propagate_boolean(task, error);
 }
 
 static void

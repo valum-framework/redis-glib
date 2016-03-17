@@ -80,7 +80,6 @@ gint
 main (gint   argc,
       gchar *argv[])
 {
-   g_type_init();
    g_test_init(&argc, &argv, NULL);
    g_test_add_func("/RedisClient/basic", test1);
    gMainLoop = g_main_loop_new(NULL, FALSE);
