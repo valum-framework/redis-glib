@@ -51,14 +51,14 @@ CLEANFILES = $(gir_DATA) $(typelib_DATA)
 if ENABLE_VAPIGEN
 -include $(VAPIGEN_MAKEFILE)
 
-redis-1.0.vapi: Redis-1.0.gir redis-1.0.deps
-redis-1.0.deps:
+redis-glib-1.0.vapi: Redis-1.0.gir redis-glib-1.0.deps
+redis-glib-1.0.deps:
 	echo "gio-2.0" > $@
 
-VAPIGEN_VAPIS = redis-1.0.vapi
+VAPIGEN_VAPIS = redis-glib-1.0.vapi
 
-redis_1_0_vapi_DEPS = gio-2.0
-redis_1_0_vapi_FILES = Redis-1.0.gir
+redis_glib_1_0_vapi_DEPS = gio-2.0
+redis_glib_1_0_vapi_FILES = Redis-1.0.gir
 
 VAPI_DEPS = $(VAPIGEN_VAPIS:.vapi=.deps)
 
